@@ -27,6 +27,8 @@ def create_app() -> Flask:
     app.register_blueprint(score_bp, url_prefix="/api")
     from app.routes.investor_match import bp as investor_match_bp
     app.register_blueprint(investor_match_bp, url_prefix="/api")
+    from app.routes.pitch import bp as pitch_bp
+    app.register_blueprint(pitch_bp, url_prefix="/api")
 
     # Health + meta
     @app.get("/health")
