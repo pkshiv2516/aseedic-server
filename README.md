@@ -6,7 +6,7 @@ Flask-based REST API for startup intelligence — funding prediction, scoring, i
 
 ## Features
 
-- **Funding Prediction** — TF-Decision Forests model predicts total fundable amount
+- **Funding Predictions** — TF-Decision Forests model predicts total fundable amount
 - **QFS Scoring** — QuantumFAI Score (0-100) with token allocation and valuation estimate
 - **Investor Matching** — TF-IDF cosine similarity matching against investor database
 - **Location Recommendation** — Composite scoring across density, funding, success rate, and growth
