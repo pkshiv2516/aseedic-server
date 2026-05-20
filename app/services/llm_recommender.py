@@ -8,42 +8,81 @@ QFS scores, investor matches, and location analysis.
 """
 
 import os
+import re
 import json
+import time
 from typing import Optional
 
 from google import genai
-from google.genai import types
 
 
-# ----------------------------- Setup ----------------------------- #
-
-GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
-GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-2.0-flash")
-_client = genai.Client(api_key=GEMINI_API_KEY) if GEMINI_API_KEY else None
+# Fallback model list — tried in order until one succeeds
+_FALLBACK_MODELS = [
+    "gemini-2.5-flash",
+    "gemini-2.0-flash",
+    "gemini-2.0-flash-lite",
+    "gemini-2.0-flash-001",
+]
 
 
 # ----------------------------- Helpers ----------------------------- #
 
+def _get_client():
+    """Build Gemini client on demand so the key is always read fresh."""
+    api_key = os.getenv("GEMINI_API_KEY")
+    if not api_key:
+        return None
+    return genai.Client(api_key=api_key)
+
+
 def _call_gemini(prompt: str) -> dict:
     """
     Send a prompt to Gemini and parse the JSON response.
-    Returns a fallback dict if anything goes wrong.
+    Tries multiple models in order with retry on 503 — returns None on total failure.
     """
-    if not _client:
+    client = _get_client()
+    if not client:
         return {"error": "GEMINI_API_KEY is not configured."}
-    try:
-        response = _client.models.generate_content(
-            model=GEMINI_MODEL,
-            contents=prompt,
-        )
-        text = response.text.replace("```json", "").replace("```", "").strip()
-        return json.loads(text)
-    except json.JSONDecodeError as e:
-        print(f"[llm_recommender] JSON parse error: {e}")
-        return {"error": "Failed to parse recommendation output. Please retry."}
-    except Exception as e:
-        print(f"[llm_recommender] Gemini call failed: {e}")
-        return {"error": "Recommendation generation failed. Please retry."}
+
+    env_model = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
+    models_to_try = [env_model] + [m for m in _FALLBACK_MODELS if m != env_model]
+
+    last_error = None
+    for model in models_to_try:
+        # Retry up to 2 times on 503 (overloaded) with a short wait
+        for attempt in range(2):
+            try:
+                response = client.models.generate_content(
+                    model=model,
+                    contents=prompt,
+                )
+                text = response.text
+
+                match = re.search(r'\{.*\}', text, re.DOTALL)
+                if not match:
+                    print(f"[llm_recommender] No JSON found in response from {model}: {text[:200]}")
+                    break  # try next model
+
+                print(f"[llm_recommender] Success with model: {model}")
+                return json.loads(match.group())
+
+            except json.JSONDecodeError as e:
+                print(f"[llm_recommender] JSON parse error with {model}: {e}")
+                last_error = str(e)
+                break  # try next model
+            except Exception as e:
+                err_str = str(e)
+                last_error = err_str
+                if "503" in err_str and attempt == 0:
+                    # Model overloaded — wait 3s and retry once
+                    print(f"[llm_recommender] {model} overloaded, retrying in 3s...")
+                    time.sleep(3)
+                    continue
+                print(f"[llm_recommender] {model} failed: {e}")
+                break  # try next model
+
+    print(f"[llm_recommender] All models exhausted. Last error: {last_error}")
+    return None
 
 
 def _format_usd(amount: float) -> str:

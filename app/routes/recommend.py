@@ -10,6 +10,7 @@ runs the model, then passes the output through the LLM for actionable insights.
 from flask import Blueprint, request, jsonify
 from pydantic import ValidationError
 import pandas as pd
+import time
 import warnings
 
 warnings.simplefilter("ignore", pd.errors.PerformanceWarning)
@@ -60,7 +61,7 @@ def api_recommend_funding():
     }
     """
     try:
-        data = request.get_json(force=True, silent=False)
+        data = request.get_json(force=True, silent=True)
         if not data:
             return jsonify({"error": "Request body is required"}), 400
 
@@ -86,10 +87,12 @@ def api_recommend_funding():
             predicted_funding_usd=predicted_usd,
         )
 
-        return jsonify({
-            "prediction": prediction,
-            "recommendation": recommendation,
-        })
+        response = {"prediction": prediction, "recommendation": recommendation}
+        if recommendation is None:
+            response["recommendation"] = None
+            response["warning"] = "LLM recommendation unavailable. Prediction succeeded."
+
+        return jsonify(response)
 
     except Exception as e:
         return jsonify({"error": "server_error", "message": str(e)}), 500
@@ -152,6 +155,9 @@ def api_recommend_score():
             "V_current_USD": int(valuation),
         }
 
+        # Small delay to avoid hitting Gemini rate limit back-to-back
+        time.sleep(2)
+
         recommendation = recommend_from_qfs_score(
             startup_data=data,
             qfs=qfs,
@@ -159,10 +165,12 @@ def api_recommend_score():
             valuation_usd=valuation,
         )
 
-        return jsonify({
-            "scores": scores,
-            "recommendation": recommendation,
-        })
+        response = {"scores": scores, "recommendation": recommendation}
+        if recommendation is None:
+            response["recommendation"] = None
+            response["warning"] = "LLM recommendation unavailable. Scoring succeeded."
+
+        return jsonify(response)
 
     except Exception as e:
         return jsonify({"error": "server_error", "message": str(e)}), 500
@@ -215,10 +223,12 @@ def api_recommend_investors():
             top_investors=matches,
         )
 
-        return jsonify({
-            "matches": matches,
-            "recommendation": recommendation,
-        })
+        response = {"matches": matches, "recommendation": recommendation}
+        if recommendation is None:
+            response["recommendation"] = None
+            response["warning"] = "LLM recommendation unavailable. Investor matching succeeded."
+
+        return jsonify(response)
 
     except Exception as e:
         return jsonify({"error": "server_error", "message": str(e)}), 500
@@ -283,10 +293,12 @@ def api_recommend_location():
             top_locations=locations,
         )
 
-        return jsonify({
-            "locations": locations,
-            "recommendation": recommendation,
-        })
+        response = {"locations": locations, "recommendation": recommendation}
+        if recommendation is None:
+            response["recommendation"] = None
+            response["warning"] = "LLM recommendation unavailable. Location ranking succeeded."
+
+        return jsonify(response)
 
     except Exception as e:
         return jsonify({"error": "server_error", "message": str(e)}), 500
