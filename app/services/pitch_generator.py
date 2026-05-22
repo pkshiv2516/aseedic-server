@@ -89,6 +89,8 @@ def _build_title_slide(prs: Presentation, slide_data: dict):
 
     title_text   = slide_data.get('title', 'Startup')
     content_text = slide_data.get('content', '')
+    if isinstance(content_text, list):
+        content_text = '\n'.join(str(item) for item in content_text)
 
     # Company / startup name
     _textbox(slide,
@@ -119,6 +121,8 @@ def _build_content_slide(prs: Presentation, slide_data: dict, slide_num: int):
 
     title_text   = slide_data.get('title', f'Slide {slide_num}')
     content_text = slide_data.get('content', '')
+    if isinstance(content_text, list):
+        content_text = '\n'.join(str(item) for item in content_text)
     chart_data   = slide_data.get('chart_data')
 
     has_chart = bool(chart_data and chart_data.get('values'))
@@ -145,6 +149,8 @@ def _build_content_slide(prs: Presentation, slide_data: dict, slide_num: int):
     # If no chart:      bullets use full width
     content_width = Inches(7.0) if has_chart else Inches(12.5)
 
+    if isinstance(content_text, list):
+        content_text = '\n'.join(str(item) for item in content_text)
     lines = [l.strip() for l in content_text.split('\n') if l.strip()]
     top = Inches(1.3)
     for line in lines[:8]:                          # cap at 8 bullets

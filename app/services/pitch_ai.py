@@ -8,15 +8,13 @@ for each slide section with structured JSON output.
 import os
 import json
 import re
-import google.generativeai as genai
+import requests
 from typing import Optional
 
 # Configure Gemini
-GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
-if GEMINI_API_KEY:
-    genai.configure(api_key=GEMINI_API_KEY)
 
-model = genai.GenerativeModel('gemini-2.0-flash')
+OLLAMA_URL = "http://localhost:11434/api/generate"
+MODEL_NAME = "gemma3"
 
 SLIDE_SECTIONS = [
     'cover',
@@ -201,8 +199,12 @@ def generate_pitch_deck_section(
     # Try up to 2 times in case Gemini returns malformed JSON first attempt
     for attempt in range(2):
         try:
-            response = model.generate_content(prompt)
-            cleaned = _clean_json(response.text)
+            response = requests.post(OLLAMA_URL, json={
+                    "model": MODEL_NAME,
+                    "prompt": prompt,
+                    "stream": False
+            })
+            cleaned = _clean_json(response.json()["response"])
             result = json.loads(cleaned)
 
             # Validate required keys are present
