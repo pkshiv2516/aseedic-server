@@ -1,7 +1,11 @@
 from __future__ import annotations
 import os
+from dotenv import load_dotenv
 from flask import Flask, jsonify
 from flask_cors import CORS
+
+# Load .env before anything else — override=True ensures .env always wins over shell env
+load_dotenv(override=True)
 
 # Keras compat for TF 2.15/2.16+ parity
 os.environ.setdefault("TF_USE_LEGACY_KERAS", "1")
@@ -31,6 +35,12 @@ def create_app() -> Flask:
     app.register_blueprint(pitch_bp, url_prefix="/api")
     from app.routes.recommend import bp as recommend_bp
     app.register_blueprint(recommend_bp, url_prefix="/api")
+    from app.routes.competitor import bp as competitor_bp
+    app.register_blueprint(competitor_bp, url_prefix="/api")
+    from app.routes.market import bp as market_bp
+    app.register_blueprint(market_bp, url_prefix="/api")
+    from app.routes.stream import bp as stream_bp
+    app.register_blueprint(stream_bp, url_prefix="/api")
 
     # Health + meta
     @app.get("/health")
