@@ -1,0 +1,8 @@
+.env
+.venv/
+__pycache__/
+*.pyc
+*.pyo
+*.Zone.Identifier
+reco_artifacts/
+*.log
