@@ -11,18 +11,70 @@ import os
 import re
 import json
 import time
+import hashlib
 from typing import Optional
 
 from google import genai
 
+# Fallback model list
+_FALLBACK_MODELS = ["gemini-2.5-flash"]
 
-# Fallback model list — tried in order until one succeeds
-_FALLBACK_MODELS = [
-    "gemini-2.5-flash",
-    "gemini-2.0-flash",
-    "gemini-2.0-flash-lite",
-    "gemini-2.0-flash-001",
-]
+# Cache TTL — default 24 hours
+_CACHE_TTL = int(os.getenv("RECOMMENDER_CACHE_TTL", 86400))
+
+# ----------------------------- Cache Setup ----------------------------- #
+
+try:
+    import redis
+    _redis_client = redis.Redis(
+        host=os.getenv("REDIS_HOST", "localhost"),
+        port=int(os.getenv("REDIS_PORT", 6379)),
+        db=int(os.getenv("REDIS_DB", 0)),
+        decode_responses=True,
+    )
+    _redis_client.ping()
+    REDIS_AVAILABLE = True
+    print("[llm_recommender] ✅ Redis connected")
+except Exception as e:
+    _redis_client = None
+    REDIS_AVAILABLE = False
+    print(f"[llm_recommender] ⚠️ Redis unavailable, using in-memory cache: {e}")
+
+# In-memory fallback cache
+_memory_cache: dict = {}
+
+
+def _make_cache_key(fn_name: str, payload: dict) -> str:
+    """Generate a stable cache key from function name + payload."""
+    normalized = json.dumps(payload, sort_keys=True, default=str).lower()
+    return f"recommender:{fn_name}:" + hashlib.sha256(normalized.encode()).hexdigest()
+
+
+def _cache_get(key: str) -> Optional[dict]:
+    if REDIS_AVAILABLE:
+        try:
+            val = _redis_client.get(key)
+            if val:
+                print(f"[llm_recommender] 🎯 Cache HIT (Redis): {key[:40]}...")
+                return json.loads(val)
+        except Exception as e:
+            print(f"[llm_recommender] Cache get error: {e}")
+    if key in _memory_cache:
+        print(f"[llm_recommender] 🎯 Cache HIT (memory): {key[:40]}...")
+        return _memory_cache[key]
+    return None
+
+
+def _cache_set(key: str, value: dict) -> None:
+    if REDIS_AVAILABLE:
+        try:
+            _redis_client.setex(key, _CACHE_TTL, json.dumps(value, default=str))
+            print(f"[llm_recommender] 💾 Cached in Redis for {_CACHE_TTL}s")
+            return
+        except Exception as e:
+            print(f"[llm_recommender] Cache set error: {e}")
+    _memory_cache[key] = value
+    print(f"[llm_recommender] 💾 Cached in memory")
 
 
 # ----------------------------- Helpers ----------------------------- #
@@ -73,6 +125,10 @@ def _call_gemini(prompt: str) -> dict:
             except Exception as e:
                 err_str = str(e)
                 last_error = err_str
+                # Any 429 — skip immediately, don't retry
+                if "429" in err_str:
+                    print(f"[llm_recommender] {model} quota/rate limited, skipping")
+                    break
                 if "503" in err_str and attempt == 0:
                     # Model overloaded — wait 3s and retry once
                     print(f"[llm_recommender] {model} overloaded, retrying in 3s...")
@@ -102,16 +158,11 @@ def recommend_from_funding_prediction(
     startup_profile: dict,
     predicted_funding_usd: float,
 ) -> dict:
-    """
-    Generate recommendations based on the funding prediction model output.
+    cache_key = _make_cache_key("funding", {**startup_profile, "predicted_usd": round(predicted_funding_usd, 2)})
+    cached = _cache_get(cache_key)
+    if cached:
+        return cached
 
-    Args:
-        startup_profile: The original request payload (founded_date, industries, etc.)
-        predicted_funding_usd: The raw prediction from the TF-DF model
-
-    Returns:
-        Structured recommendation dict with summary, strengths, gaps, and next steps.
-    """
     formatted = _format_usd(predicted_funding_usd)
     industries = startup_profile.get("industries", [])
     industry_str = ", ".join(industries) if industries else "Not specified"
@@ -148,7 +199,10 @@ Return ONLY this JSON structure, no markdown:
   "next_steps": ["immediate step 1", "immediate step 2"]
 }}
 """
-    return _call_gemini(prompt)
+    result = _call_gemini(prompt)
+    if result:
+        _cache_set(cache_key, result)
+    return result
 
 
 def recommend_from_qfs_score(
@@ -157,18 +211,11 @@ def recommend_from_qfs_score(
     tokens: int,
     valuation_usd: float,
 ) -> dict:
-    """
-    Generate recommendations based on the QuantumFAI Score output.
+    cache_key = _make_cache_key("score", {**startup_data, "qfs": round(qfs, 2), "tokens": tokens})
+    cached = _cache_get(cache_key)
+    if cached:
+        return cached
 
-    Args:
-        startup_data: Single startup row dict (same fields used in /api/score)
-        qfs: The computed QFS score (0-100)
-        tokens: Allocated tokens from the scoring engine
-        valuation_usd: Estimated current valuation in USD
-
-    Returns:
-        Structured recommendation dict tailored to the QFS result.
-    """
     valuation_str = _format_usd(valuation_usd)
 
     # Determine score band for context
@@ -219,23 +266,21 @@ Return ONLY this JSON structure, no markdown:
   "next_steps": ["immediate action 1", "immediate action 2"]
 }}
 """
-    return _call_gemini(prompt)
+    result = _call_gemini(prompt)
+    if result:
+        _cache_set(cache_key, result)
+    return result
 
 
 def recommend_from_investor_matches(
     startup_profile: dict,
     top_investors: list,
 ) -> dict:
-    """
-    Generate outreach and positioning recommendations based on investor match results.
+    cache_key = _make_cache_key("investors", {**startup_profile, "investor_count": len(top_investors)})
+    cached = _cache_get(cache_key)
+    if cached:
+        return cached
 
-    Args:
-        startup_profile: The startup's industry, stage, and region info
-        top_investors: List of top matched investor dicts (from /api/match)
-
-    Returns:
-        Structured recommendation dict with outreach strategy and positioning tips.
-    """
     # Summarize top 5 investors for the prompt — avoid bloating context
     top5 = top_investors[:5]
     investor_summary = []
@@ -279,7 +324,10 @@ Return ONLY this JSON structure, no markdown:
   "next_steps": ["immediate action 1", "immediate action 2"]
 }}
 """
-    return _call_gemini(prompt)
+    result = _call_gemini(prompt)
+    if result:
+        _cache_set(cache_key, result)
+    return result
 
 
 def recommend_from_location_analysis(
@@ -287,17 +335,11 @@ def recommend_from_location_analysis(
     geographic_level: str,
     top_locations: list,
 ) -> dict:
-    """
-    Generate location strategy recommendations based on the location recommender output.
+    cache_key = _make_cache_key("location", {"industry": industry, "level": geographic_level, "locations": [l.get("Location") for l in top_locations[:5]]})
+    cached = _cache_get(cache_key)
+    if cached:
+        return cached
 
-    Args:
-        industry: The startup's industry vertical
-        geographic_level: "City", "State", or "Country"
-        top_locations: List of top location dicts from /api/location/recommend
-
-    Returns:
-        Structured recommendation dict with location strategy and expansion advice.
-    """
     top5 = top_locations[:5]
     location_summary = []
     for loc in top5:
@@ -339,4 +381,7 @@ Return ONLY this JSON structure, no markdown:
   "next_steps": ["immediate action 1", "immediate action 2"]
 }}
 """
-    return _call_gemini(prompt)
+    result = _call_gemini(prompt)
+    if result:
+        _cache_set(cache_key, result)
+    return result
