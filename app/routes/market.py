@@ -1,29 +1,29 @@
 from __future__ import annotations
 """
-Competitor Analysis Agent Route
+Market Analysis Agent Route
 
-Exposes the 5-step Competitor Analysis Agent as a single REST endpoint.
-The agent reasons through the competitive landscape in structured phases,
-building context from each step into the next.
+Exposes the 3-step Market Analysis Agent as a single REST endpoint.
+The agent analyzes the market landscape, entry barriers, customer profile,
+demand signals, and delivers a go-to-market strategy.
 """
 
 from flask import Blueprint, request, jsonify
-from app.services.competitor_agent import run_competitor_analysis_agent
+from app.services.market_agent import run_market_analysis_agent
 
-bp = Blueprint("competitor", __name__)
+bp = Blueprint("market", __name__)
 
 
-@bp.post("/competitor/analyze")
-def api_competitor_analyze():
+@bp.post("/market/analyze")
+def api_market_analyze():
     """
-    POST /api/competitor/analyze
+    POST /api/market/analyze
 
-    Runs the full 3-step Competitor Analysis Agent for a startup.
+    Runs the full 3-step Market Analysis Agent for a startup.
 
     The agent executes these steps sequentially:
-      1. Market Scan         — identifies top 5 real competitors
-      2. Intelligence Bundle — deep dive + positioning + gap analysis
-      3. Battle Plan         — delivers a concrete competitive strategy
+      1. Market Landscape    — TAM/SAM/SOM, CAGR, segments, trends
+      2. Intelligence Bundle — Entry barriers, customer profile, demand signals
+      3. Market Strategy     — GTM approach, entry plan, expansion roadmap, verdict
 
     Request Body:
     {
@@ -33,21 +33,32 @@ def api_competitor_analyze():
       "target_market": "SMEs in Southeast Asia",
       "region": "Southeast Asia",
       "stage": "Seed",
-      "product_description": "API-first payment gateway for SMEs",
-      "usp": "Lowest transaction fees with instant settlement"
+      "product_description": "API-first payment gateway for SMEs"
     }
 
     Returns:
     {
       "startup": "MyStartup",
       "industry": "FinTech",
-      "agent_steps_completed": 5,
+      "cache_hit": false,
+      "agent_steps_completed": 3,
+      "tam": {...},
+      "sam": {...},
+      "som": {...},
+      "cagr": "...",
+      "market_maturity": "...",
+      "key_segments": [...],
+      "top_trends": [...],
       "market_summary": "...",
-      "competitors_identified": [...],
-      "competitor_analysis": [...],
-      "positioning": {...},
-      "gap_intelligence": {...},
-      "battle_plan": {...}
+      "entry_barriers": [...],
+      "customer_profile": {...},
+      "demand_signals": {...},
+      "gtm_strategy": {...},
+      "market_entry_plan": [...],
+      "expansion_roadmap": [...],
+      "key_risks": [...],
+      "success_metrics": [...],
+      "verdict": "..."
     }
     """
     try:
@@ -55,14 +66,13 @@ def api_competitor_analyze():
         if not data or not isinstance(data, dict):
             return jsonify({"error": "Request body is required"}), 400
 
-        # Validate required fields
         if not data.get("industry"):
             return jsonify({"error": "industry is required"}), 400
 
         if not data.get("product_description"):
             return jsonify({"error": "product_description is required"}), 400
 
-        result = run_competitor_analysis_agent(data)
+        result = run_market_analysis_agent(data)
 
         steps = result.get("agent_steps_completed", 0)
         if steps == 0:
@@ -72,7 +82,6 @@ def api_competitor_analyze():
                 "partial_result": result,
             }), 503
 
-        # Return 200 even on partial — prediction data is still valuable
         response = result.copy()
         if steps < 3:
             response.setdefault("warning", f"Agent completed {steps}/3 steps. Partial results returned.")
