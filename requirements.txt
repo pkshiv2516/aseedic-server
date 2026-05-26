@@ -1,20 +1,35 @@
+# ── Python version required: 3.11.x (NOT 3.12 — TF Decision Forests unsupported) ──
+# Pin is enforced via runtime.txt and .python-version files in repo root
+
 flask==3.0.3
 flask-cors==4.0.0
 pydantic==2.9.2
 python-dotenv>=1.0.0
 
-# Core scientific stack for location recommender
-numpy>=1.23
+# ── Core scientific stack ──────────────────────────────────────────────────────
+# numpy MUST be <2.0 — TensorFlow 2.15 has binary ABI incompatibility with numpy 2.x
+numpy>=1.23,<2.0
 pandas>=2.0
 scikit-learn>=1.3
 joblib>=1.3
 scipy>=1.11
 
-# Pitch deck generation
-python-pptx>=0.6.21
-google-genai>=1.0.0
+# ── TensorFlow ML stack (funding prediction, QFS scoring, investor matching) ──
+# Requires Python 3.11 — will crash on Python 3.12 (distutils removed)
+# These three must be installed together at these exact versions
+tensorflow==2.15.0
+tf-keras==2.15.1
+tensorflow-decision-forests==1.8.1
 
-# tensorflow>=2.15
-# tensorflow-decision-forests>=1.8.1
-# If you save models with tf_keras on TF >= 2.16
-# tf-keras>=2.16.0
+# ── Pitch deck generation — PPTX rendering ────────────────────────────────────
+python-pptx>=0.6.21
+pillow>=10.0.0
+lxml>=4.9.0
+requests>=2.31.0
+
+# ── Pitch deck generation — AI content (Ollama Cloud / GPT-OSS 20B) ──────────
+# Pin >=0.5.0 — versions below 0.5 had different response format
+ollama>=0.5.0,<1.0.0
+
+# ── Pitch deck generation — Gemini (fallback / recommend routes) ──────────────
+google-genai>=1.0.0
