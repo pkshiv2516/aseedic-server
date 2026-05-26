@@ -23,8 +23,8 @@ def create_app() -> Flask:
     )
 
     # Register blueprints
-   # from app.routes.predict import bp as predict_bp
-    #app.register_blueprint(predict_bp, url_prefix="/api")
+    from app.routes.predict import bp as predict_bp
+    app.register_blueprint(predict_bp, url_prefix="/api")
     from app.routes.location_recommender import bp as locrec_bp
     app.register_blueprint(locrec_bp, url_prefix="/api")
     from app.routes.score import bp as score_bp
@@ -33,8 +33,8 @@ def create_app() -> Flask:
     app.register_blueprint(investor_match_bp, url_prefix="/api")
     from app.routes.pitch import bp as pitch_bp
     app.register_blueprint(pitch_bp, url_prefix="/api")
-    #from app.routes.recommend import bp as recommend_bp
-    #app.register_blueprint(recommend_bp, url_prefix="/api")
+    from app.routes.recommend import bp as recommend_bp
+    app.register_blueprint(recommend_bp, url_prefix="/api")
     from app.routes.competitor import bp as competitor_bp
     app.register_blueprint(competitor_bp, url_prefix="/api")
 

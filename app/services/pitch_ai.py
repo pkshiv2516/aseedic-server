@@ -4,19 +4,20 @@ Pitch Deck AI Content Generator Service
 Uses Ollama Cloud API (online, no local install needed) to generate
 professional investor pitch deck content for each slide section.
 Requires: pip install ollama
-API Key:  ollama.com/settings/keys -> set OLLAMA_API_KEY env var
+API Key:  ollama.com/settings/keys -> set OLAMMA_API_KEY env var
 """
 
 import os
 import json
 import re
+from datetime import datetime
 from typing import Optional
 from ollama import Client
 
 # ── Ollama Cloud API config ───────────────────────────────────────────────────
 client = Client(
     host="https://ollama.com",
-    headers={"Authorization": f"Bearer {os.getenv('OLLAMA_API_KEY')}"}
+    headers={"Authorization": f"Bearer {os.getenv('OLAMMA_API_KEY')}"}
 )
 MODEL_NAME = "gpt-oss:20b-cloud"   # free model on Ollama Cloud
 
@@ -48,6 +49,25 @@ def _fallback(section: str) -> dict:
     }
 
 
+# ── Real month labels for traction chart ─────────────────────────────────────
+def _traction_labels(current_year: str) -> list:
+    """
+    Generate 6 real calendar month labels ending on the current month.
+    e.g. if today is May 2026 → ["Dec 2025","Jan 2026","Feb 2026","Mar 2026","Apr 2026","May 2026"]
+    This gives the native BAR chart a proper time-axis instead of "Month 1..6".
+    """
+    now = datetime.now()
+    labels = []
+    for offset in range(5, -1, -1):
+        month_num = now.month - offset
+        year      = int(current_year)
+        if month_num <= 0:
+            month_num += 12
+            year -= 1
+        labels.append(datetime(year, month_num, 1).strftime("%b %Y"))
+    return labels
+
+
 # ── Prompt builder ────────────────────────────────────────────────────────────
 def _build_prompt(section: str, context: dict, current_content: Optional[str]) -> str:
     """
@@ -68,7 +88,11 @@ def _build_prompt(section: str, context: dict, current_content: Optional[str]) -
     industry      = context.get('industry',       'technology')
     stage         = context.get('stage',          'early-stage')
     location      = context.get('location',       'not specified')
-    current_year  = context.get('currentYear',    '2026')   # ← NEW
+    current_year  = context.get('currentYear',    '2026')
+
+    # Real month labels for traction chart axis
+    month_labels  = _traction_labels(current_year)
+    month_labels_str = json.dumps(month_labels)
 
     # ── Shared system context injected into every prompt ─────────────────────
     system_context = f"""
@@ -390,6 +414,7 @@ CHART — 6 months of growth data:
   - Values must show clear upward trend with realistic growth rates
   - For {stage} startup: start modest, grow 25-40% month over month
   - Use {traction} context if provided to make numbers credible
+  - IMPORTANT: use EXACTLY these labels in this exact order: {month_labels_str}
 
 DATE RULE: All milestone dates and timeframes must use {current_year} or later — never past dates.
 
@@ -400,7 +425,7 @@ Return ONLY this exact JSON:
   "chart_data": {{
     "type": "bar",
     "title": "Monthly Growth",
-    "labels": ["Month 1", "Month 2", "Month 3", "Month 4", "Month 5", "Month 6"],
+    "labels": {month_labels_str},
     "values": [<v1>, <v2>, <v3>, <v4>, <v5>, <v6>]
   }}
 }}
@@ -501,14 +526,14 @@ def generate_pitch_deck_section(
 
     for attempt in range(2):
         try:
-            # ✅ Uses the ollama Client defined at module level — no requests, no bare vars
+            # ✅ Ollama Cloud API — uses official ollama Python library
             response = client.chat(
                 model=MODEL_NAME,
                 messages=[{"role": "user", "content": prompt}],
                 stream=False
             )
 
-            raw_text = response['message']['content']
+            raw_text = response.message.content
             cleaned  = _clean_json(raw_text)
             result   = json.loads(cleaned)
 

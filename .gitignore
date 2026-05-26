@@ -1,5 +1,17 @@
 ﻿.env
 .venv/
 __pycache__/
+*.pptx
 *.pyc
 *.pyo
+models_/
+artifacts_/
+artifacts_city/
+artifacts_combined/
+artifacts_rev_split/
+artifacts_state/
+models_city/
+models_combined/
+models_rev_split/
+models_state/
+reco_artifacts/

@@ -15,7 +15,7 @@ bp = Blueprint("pitch", __name__)
 def api_generate_full_deck():
     """
     Generate content for all 10 slides of a pitch deck.
-    
+
     Request Body:
         {
             "startupName": "QuantumFAI",
@@ -25,7 +25,7 @@ def api_generate_full_deck():
             "businessModel": "Business model...",
             ...any additional context
         }
-    
+
     Returns:
         {
             "slides": [
@@ -35,15 +35,15 @@ def api_generate_full_deck():
         }
     """
     data = request.get_json()
-    
+
     if not data:
         return jsonify({"error": "Request body is required"}), 400
-    
+
     if not data.get("startupName"):
         return jsonify({"error": "startupName is required"}), 400
-    
+
     deck_slides = generate_full_deck(data)
-    
+
     return jsonify({"slides": deck_slides})
 
 
@@ -51,31 +51,31 @@ def api_generate_full_deck():
 def api_generate_slide():
     """
     Regenerate content for a specific slide.
-    
+
     Request Body:
         {
             "sectionTitle": "Market",
             "currentContent": "Old content to improve...",
             "context": { ...startup data }
         }
-    
+
     Returns:
         {"title": "...", "content": "...", "chart_data": {...}}
     """
     data = request.get_json()
-    
+
     if not data:
         return jsonify({"error": "Request body is required"}), 400
-    
+
     section = data.get('sectionTitle', '').lower().replace(' ', '_')
     context = data.get('context', {})
     current_content = data.get('currentContent')
-    
+
     if not section:
         return jsonify({"error": "sectionTitle is required"}), 400
-    
+
     slide_data = generate_pitch_deck_section(section, context, current_content)
-    
+
     return jsonify(slide_data)
 
 
@@ -83,10 +83,11 @@ def api_generate_slide():
 def api_generate_ppt():
     """
     Generate and download a PowerPoint file from existing slide data.
-    
+
     Request Body:
         {
             "startupName": "QuantumFAI",
+            "theme": "light",          ← optional: dark / light / blue
             "deck": {
                 "slides": [
                     {"title": "...", "content": "...", "chart_data": {...}},
@@ -94,23 +95,24 @@ def api_generate_ppt():
                 ]
             }
         }
-    
+
     Returns:
         Binary PPTX file download
     """
     data = request.get_json()
-    
+
     if not data:
         return jsonify({"error": "Request body is required"}), 400
-    
+
     deck = data.get('deck')
     if not deck or not deck.get('slides'):
         return jsonify({"error": "deck.slides is required"}), 400
-    
+
     startup_name = data.get('startupName', 'Startup')
-    
-    ppt_file = generate_ppt_file(deck['slides'])
-    
+
+    # ✅ Pass data so theme + startupName reach the generator
+    ppt_file = generate_ppt_file(deck['slides'], data)
+
     return send_file(
         ppt_file,
         as_attachment=True,
@@ -124,31 +126,33 @@ def api_generate_and_download():
     """
     Generate pitch deck content and immediately return the PowerPoint file.
     Combines generate-full-deck and generate-ppt into one call.
-    
+
     Request Body:
         {
             "startupName": "QuantumFAI",
             "problem": "...",
             "solution": "...",
+            "theme": "light",          ← optional: dark / light / blue
             ...
         }
-    
+
     Returns:
         Binary PPTX file download
     """
     data = request.get_json()
-    
+
     if not data:
         return jsonify({"error": "Request body is required"}), 400
-    
+
     if not data.get("startupName"):
         return jsonify({"error": "startupName is required"}), 400
-    
-    # Generate content for all sections
+
+    # Generate content for all 10 sections
     deck_slides = generate_full_deck(data)
-    
-    # Generate PPT from the content
-    ppt_file = generate_ppt_file(deck_slides)
+
+    # ✅ Pass data so theme + startupName reach the generator
+    ppt_file = generate_ppt_file(deck_slides, data)
+
     startup_name = data.get('startupName', 'Startup')
 
     return send_file(
@@ -157,3 +161,4 @@ def api_generate_and_download():
         download_name=f"{startup_name.replace(' ', '_')}_Pitch_Deck.pptx",
         mimetype='application/vnd.openxmlformats-officedocument.presentationml.presentation'
     )
+    
